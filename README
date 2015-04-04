@@ -1,0 +1,52 @@
+Anatoliy Lane
+Assignment 2
+COMPUTER GRAPHICS Sp14
+Rutgers University
+
+
+controls:
+
+Use the left mouse button to select one of the three (and/or/not) gates
+use the the middle mouse button (scroll bar button) to connect the output terminals to input terminals between gates
+use the right mouse button to select the wire color, wire type, or to quit the program
+
+Using the Program:
+	Gate Selection:
+		Select one of the three logical gates on the top-left corner of the window.
+		Once selected, click anywhere else in the program, below the selection list, to place a copy of that gate
+		Select on a different gate to change selections
+		The gate defaults to "logical or"
+	Wire Selection:
+		Right click and use the submenu "Wires" to select the appropriate wire
+		Once selected, select a color for the wire
+		If selecting an "XYX" or "YXY" connection, the fraction buffer clears and you must put in a fraction in decimal form (example: 0.233) in the program (not the terminal!) and then press "enter" or "return"
+		The color defaults to red.
+		The connection type defaults to "XY"
+	Wire Connection:
+		Use the middle mouse button to first select the output terminal then the input terminal to connect the gates		
+	Terminal:
+		The terminal will output selections, gates, and wire connections, as well as the fraction number, if selecting an XYX or YXY type wire
+Closing the Program:
+	To close the program, simply right-click and press 'Exit'. Alternatively, you can press 'q' to quit or press the 'Esc' button
+
+
+Compiling:
+
+The bulk of my program is located at "./opengl/opengl/src/main.cpp"
+This project is best compiled with Microsoft Visual Studio 2010 or higher.
+Double click the 'opengl.sln' if on a microsoft platform to compile/run the project.
+If compiling on a *NIX derivative, make sure to set two global preprocessor directives
+( GLEW_STATIC and FREEGLUT_STATIC ) to enable static compilation the project.
+If you don't want to use glew/freeglut, remove the #includes at 'main.cpp' and replace it with
+the appropriate header files. Glew is an extention library I needed, and freeglut is backwards
+compatible with the deprecated original glut library. Provided also in "./Release" 
+are the binary files necessary to run the program on a windows platform.
+If for some reason, it fails to compile, you can run it with that.
+
+
+Licence:
+
+The licence I included is an MIT licence.
+Basically, I'm enabling you to do whatever you want with my source code
+with no strings attached. It also serves as a disclaimer that there is
+no warranty (I doubt you need it anyway, it's a small assignment).

@@ -1,31 +1,22 @@
 Anatoliy Lane
-Assignment 2
+Assignment 3
 COMPUTER GRAPHICS Sp14
 Rutgers University
 
 
 controls:
+use the x,y,z keys to go in the direction of the axis
+in upper case, the direction is positive in the respective axis
+in lower case, the direction is negative in the respective axis
+the direction faced will always be toward (0,0,0) by default
+use the left click button random trajectories or a birds eye view
+also a custom trajectory can be set by specifying the position, look-at location, and go-to directions
+specify them in x y z format, with no spaces or parenthesis (i.e. <4.2, 10.5, 3.4> would be 4.2 10.5 3.4
+to stay stationary and look in a different direction, let the position and go-to position be the same coordinates
+the look-at direction vector may not be parallel to the up vector (i.e. you may not be standing in <0,0,10> and looking at <0,10,10>
+but the look-at direction vector may be -nearly- parallel with the up vector (i.e. standing in <0,0,10> and looking at <0,10,9.9999>
 
-Use the left mouse button to select one of the three (and/or/not) gates
-use the the middle mouse button (scroll bar button) to connect the output terminals to input terminals between gates
-use the right mouse button to select the wire color, wire type, or to quit the program
-
-Using the Program:
-	Gate Selection:
-		Select one of the three logical gates on the top-left corner of the window.
-		Once selected, click anywhere else in the program, below the selection list, to place a copy of that gate
-		Select on a different gate to change selections
-		The gate defaults to "logical or"
-	Wire Selection:
-		Right click and use the submenu "Wires" to select the appropriate wire
-		Once selected, select a color for the wire
-		If selecting an "XYX" or "YXY" connection, the fraction buffer clears and you must put in a fraction in decimal form (example: 0.233) in the program (not the terminal!) and then press "enter" or "return"
-		The color defaults to red.
-		The connection type defaults to "XY"
-	Wire Connection:
-		Use the middle mouse button to first select the output terminal then the input terminal to connect the gates		
-	Terminal:
-		The terminal will output selections, gates, and wire connections, as well as the fraction number, if selecting an XYX or YXY type wire
+Terminal:
 Closing the Program:
 	To close the program, simply right-click and press 'Exit'. Alternatively, you can press 'q' to quit or press the 'Esc' button
 

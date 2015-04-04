@@ -1,25 +1,50 @@
 Anatoliy Lane
-Assignment 3
+Assignment 4
 COMPUTER GRAPHICS Sp14
 Rutgers University
 
+new features:
+-trajectories
+	the right-click menu has a new 'follow' option to circle around the animals
+	the 'n' key can be pressed to traverse through either animal
+-navigation mode
+	the arrow keys and 'f' and 'b' keys allow the user to move in the terrarium
+	with much more freedom than before, in addition to existing functionality from the previous project
+-lighting
+	smooth shading, for realistic lighting of materials
+	lighting + attenuation, objects closer to light source are lit brighter than objects further away
+-textures
+	images are loaded into memory from the .BMP format (I did not use a library to do this, thought it'd be more fun to do myself)
+	fish have scales, waterbugs are camouflaged on the seabed
+	the seabed itself has a texture
+	the fish have a more fish-like shape
+-fogging
+	fog is implemented as well. Objects too far away are harder to see in the water
+	you can always use 'bird's eye view' trajectory if you get lost in navigation mode
+	to return to the terrarium
 
 controls:
 use the x,y,z keys to go in the direction of the axis
-in upper case, the direction is positive in the respective axis
-in lower case, the direction is negative in the respective axis
-the direction faced will always be toward (0,0,0) by default
-use the left click button random trajectories or a birds eye view
+in upper case and lower case, the camera travels in the respective axis in the positive and negative direction, respectively
+the camera can now move freely as well. Use the arrow keys (up,down,left,right) to change the camera's direction.
+Use the 'f' and 'b' keys to move forward or back, respectively, in the direction the camera is facing.
+the direction faced is toward (0,0,0) by default
+use the left click button for trajectories or a birds eye view
 also a custom trajectory can be set by specifying the position, look-at location, and go-to directions
-specify them in x y z format, with no spaces or parenthesis (i.e. <4.2, 10.5, 3.4> would be 4.2 10.5 3.4
+specify them in x y z format, with no commas or parenthesis (i.e. <4.2, 10.5, 3.4> would be 4.2 10.5 3.4
 to stay stationary and look in a different direction, let the position and go-to position be the same coordinates
 the look-at direction vector may not be parallel to the up vector (i.e. you may not be standing in <0,0,10> and looking at <0,10,10>
-but the look-at direction vector may be -nearly- parallel with the up vector (i.e. standing in <0,0,10> and looking at <0,10,9.9999>
+Use the right click button to follow an animal (fish or waterbug) in a circular motion above the animal.
+Press 'n' to follow the next fish or waterbug. You can continue to press this for both animals to traverse through them.
+Waterbugs are well-camouflaged to hide from their predators. The arrow keys and 'f' and 'b' keys are useful to navigate to them
+alternatively, you can follow them using the right-click menu option
 
 Terminal:
 Closing the Program:
 	To close the program, simply right-click and press 'Exit'. Alternatively, you can press 'q' to quit or press the 'Esc' button
 
+Building
+Hold crtl+f5 to launch in debug mode. Release mode in Visual studio releases optimized, faster code.
 
 Compiling:
 

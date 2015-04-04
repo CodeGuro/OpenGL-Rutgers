@@ -1,31 +1,58 @@
-// Moves a square using mouse and idle callbacks
 #include <GL/glew.h>
 #include <GL/freeglut.h>
+#include <stdexcept>
 #include <vector>
+#include <string>
+#include <map>
 #include <math.h>
 
 /*The bulk of the program*/
 class Program
 {
 private:
-	struct Vec3
+	struct Vec3 //serve as position or color
 	{
-		float x;
-		float y;
-		float z;
+		union
+		{
+			struct
+			{
+				float x;
+				float y;
+				float z;
+			};
+			struct
+			{
+				float r;
+				float g;
+				float b;
+			};
+		};
 		Vec3() {}
 		Vec3( float x, float y, float z ) : x( x ), y( y ), z( z ) {}
 	};
-	struct Vec4
+	struct Vec4 //serve as homogenous position or color, with alpha component
 	{
+		union
+		{
+			struct
+			{
+				float x;
+				float y;
+				float z;
+				float w;
+			};
+			struct
+			{
+				float r;
+				float g;
+				float b;
+				float a;
+			};
+		};
 		Vec4(){}
 		Vec4( float x, float y, float z, float w ) : 
 			x( x ), y( y ), z( z ), w( w ) {}
 			Vec4( Vec3 v, float w ) : x( v.x ), y( v.y ), z( v.z ), w( w ) {}
-		float x;
-		float y;
-		float z;
-		float w;
 	};
 	struct Vertex
 	{
@@ -35,6 +62,41 @@ private:
 		Vertex( Vec3 const & pos ) : position( pos ), color( 0, 0, 0 ) {}
 		Vertex( Vec3 const & pos, Vec3 const & col ) : position( pos ), color( col ) {}
 	};
+	struct LightComponent //for anything that involves light
+	{
+		Vec4 ambience;
+		Vec4 diffuse;
+		Vec4 specular;
+
+		LightComponent()
+		{
+			specular = diffuse = ambience = Vec4( 0.f, 0.f, 0.f, 0.f );
+		}
+		LightComponent( Vec4 const ambience, Vec4 const diffuse, Vec4 const specular ) :
+			ambience( ambience ), diffuse( diffuse ), specular( specular )
+			{
+			}
+	};
+	struct LightSource : public LightComponent //self explanatory
+	{
+		Vec4 position;
+		
+		LightSource()
+		{
+		}
+		LightSource( LightComponent const & comp ) : LightComponent( comp ), position( 0.0f, 0.0f, 0.0f, 0.0f )
+		{
+		}
+		LightSource( LightComponent const & comp, Vec4 position ) : LightComponent( comp ), position( position )
+		{
+		}
+	};
+	struct Texture
+	{
+		GLuint TexID;
+		unsigned Width;
+		unsigned Height;
+	};
 	struct Board /*screen width/height*/
 	{
 		int m_width;
@@ -42,74 +104,17 @@ private:
 		Vec3 LowerBounds;
 		Vec3 UpperBounds;
 		Vec3 UpperBounds_Floor;
+		Vec3 FogColor;
 		Board() : m_width( 700 ), m_height( 700 ),
 			LowerBounds( -20.f, -20.f, -20.f ), UpperBounds( 20.f, 20.f, 20.f ),
-			UpperBounds_Floor( 20.f, -19.f, 20.f )
+			UpperBounds_Floor( 20.f, -19.f, 20.f ), FogColor( 25.f/255.f, 50.f/255.f, 60.f/255.f )
 		{
 		}
 	};
-	struct Camera
-	{
-	public:
-		enum Trajectory
-		{
-			PREDEFINED_TRAJECTORY, CUSTOM_TRAJECTORY, BIRDS_EYE_VIEW
-		};
-		Vec3 eye;
-		Vec3 at;
-		Vec3 up;
-		bool MotionMode;
-		Trajectory TrajectoryMode;
-		float Timer;
-		Vec3 Storage;
-
-		void Update()
-		{
-			if( MotionMode )
-			{
-				float PI = 2.f * acos( 0.f );
-				switch( TrajectoryMode )
-				{
-				case PREDEFINED_TRAJECTORY:
-					{
-						float Quantity = 14.f * cos( Timer );
-						Timer += 2 * PI / ( 10.f * 60.f );
-						Timer = fmod( Timer, 2 * PI );
-						eye.x = Storage.x * 16.f + Storage.x * Quantity;
-						eye.y = Storage.y * 16.f + Storage.y * Quantity;
-						eye.z = Storage.z * 16.f + Storage.z * Quantity;
-					}
-					break;
-				case CUSTOM_TRAJECTORY:
-					{
-						Vec3 dis = Vec3( Storage.x - eye.x, Storage.y - eye.y, Storage.z - eye.z );
-						float mag = sqrt( dis.x * dis.x + dis.y * dis.y + dis.z * dis.z );
-						mag = mag > 1.f ? 1.f / ( 5.f * 60.f ) : 0.f;
-						eye = Vec3( eye.x + dis.x * mag,
-							eye.y + dis.y * mag, eye.z + dis.z * mag);
-					}
-					break;
-				case BIRDS_EYE_VIEW:
-					{
-						float PI = 2 * acos( 0.f );
-						Timer += 2 * PI / ( 10.f * 60.f );
-						Timer = fmod( Timer, 2 * PI );
-						eye.y = 12.f;
-						eye.x = 12.f * sin( Timer );
-						eye.z = 12.f * cos( Timer );
-					}
-					break;
-				}
-			}
-		}
-		Camera() : MotionMode( false )
-		{
-		}
-	};
-
 	class Object //abstract base class
 	{
 	private:
+		LightComponent Material;
 		Vec4 Orientation;
 		Vec3 Position;
 		Vec3 Position_Target;
@@ -137,14 +142,13 @@ private:
 			//transform this orientation by multiplying quaternions qorient * qforw * qorient'
 			//to find our 'actual' forward direction currently (we may be facing 'up' or 'right', i.e. <0,1,0> or <1,0,0>)
 			Vec4 dir_v4 = QuaternionMultiply( QuaternionMultiply( Orientation, Vec4( 0.f, 0.f, 1.f, 0.f ) ), QuaternionConjugate( Orientation ) );
-			Vec3 Direction_Vector = Normalize( Vec3( dir_v4.x, dir_v4.y, dir_v4.z ) );
 
 			//interpolate by slerping our actual current forward direction to the direction we need to face (our 'random point' target direction)
-			Vec4 offset = QuaternionSlerp( Vec4( Direction_Vector, 0.f ), Vec4( Direction_Target, 0.f ), 1.f / ( 1.5f * 60.f ) );
+			Vec4 offset = QuaternionSlerp( dir_v4, Vec4( Direction_Target, 0.f ), 1.f / ( 1.5f * 60.f ) );
 
-			Vec4 dir = QuaternionMultiply( QuaternionMultiply( offset, Vec4( Direction_Vector, 0.f ) ),
+			Vec4 dir = QuaternionMultiply( QuaternionMultiply( offset, dir_v4 ),
 				QuaternionConjugate( offset ) ); //multiply our actual direction by the small offset for the next frame (we are 'turning slowly' now)
-			Direction_Vector = Vec3( dir.x, dir.y, dir.z );
+			Vec3 Direction_Vector = Vec3( dir.x, dir.y, dir.z );
 			Vec3 Forward_Vector = Vec3( 0.f, 0.f, 1.f );
 
 
@@ -160,14 +164,6 @@ private:
 		void SetSpeed( float Speed )
 		{
 			this->Speed = Speed;
-		}
-		Vec3 GetPosition() const
-		{
-			return Position;
-		}
-		Vec4 GetOrientation() const
-		{
-			return Orientation;
 		}
 
 	public:
@@ -192,6 +188,14 @@ private:
 		}
 		void Update( Vec3 const LowerBounds, Vec3 const UpperBounds )
 		{
+			Vec4 full = Vec4( 1.f, 1.f, 1.f, 1.f );
+			SetLightComponent( LightComponent( full, full, full ) );
+			//set the material properties
+			glMaterialfv(GL_FRONT, GL_SPECULAR, &Material.specular.x );
+			glMaterialfv(GL_FRONT, GL_AMBIENT, &Material.ambience.x );
+			glMaterialfv(GL_FRONT, GL_DIFFUSE, &Material.diffuse.x );
+			glMaterialf(GL_FRONT, GL_SHININESS, 5.f ); 
+
 			//find the distance between our current position and the target point
 			float dst = sqrt( pow( Position_Target.x - Position.x, 2.f ) + 
 				pow( Position_Target.y - Position.y, 2.f ) + pow( Position_Target.z - Position.z, 2.f ) );
@@ -205,8 +209,19 @@ private:
 			Position.x += Displace.x, Position.y += Displace.y, Position.z += Displace.z;
 			
 		}
+		void SetLightComponent( LightComponent const & Component )
+		{
+			Material = Component;
+		}
+		Vec3 GetPosition() const
+		{
+			return Position;
+		}
+		Vec4 GetOrientation() const
+		{
+			return Orientation;
+		}
 	};
-
 	enum
 	{
 		//for display lists
@@ -215,9 +230,9 @@ private:
 		WATERBUG_BODY,
 		WATERBUG_LIMB,
 		PARTICLE,
-		SPHERES
+		SEABED,
+		BULB,
 	};
-
 	class Fish : public Object
 	{
 	private:
@@ -333,13 +348,108 @@ private:
 			glCallList( PARTICLE );
 		}
 	};
+	struct Camera //arrow key movement defined in void SpecialKey( int Key ), not in Camera class (see below)
+	{
+	public:
+		enum Trajectory //trajectory modes, including 'follow'
+		{
+			PREDEFINED_TRAJECTORY, CUSTOM_TRAJECTORY, BIRDS_EYE_VIEW,
+			FOLLOW_FISH, FOLLOW_WATERBUG,
+			NAVIGATION
+		};
+		Vec3 eye;
+		Vec3 at;
+		Vec3 up;
+		bool MotionMode;
+		Trajectory TrajectoryMode;
+		float Timer;
+		unsigned FollowIndex;
+		Vec3 Storage;
+
+		void Update( std::vector< Fish > const & fish, std::vector< WaterBug > const & waterbugs )
+		{
+			if( MotionMode )
+			{
+				float PI = 2.f * acos( 0.f );
+				switch( TrajectoryMode )
+				{
+				case PREDEFINED_TRAJECTORY:
+					{
+						float Quantity = 14.f * cos( Timer );
+						Timer += 2 * PI / ( 10.f * 60.f );
+						Timer = fmod( Timer, 2 * PI );
+						eye.x = Storage.x * 16.f + Storage.x * Quantity;
+						eye.y = Storage.y * 16.f + Storage.y * Quantity;
+						eye.z = Storage.z * 16.f + Storage.z * Quantity;
+					}
+					break;
+				case CUSTOM_TRAJECTORY:
+					{
+						Vec3 dis = Vec3( Storage.x - eye.x, Storage.y - eye.y, Storage.z - eye.z );
+						float mag = sqrt( dis.x * dis.x + dis.y * dis.y + dis.z * dis.z );
+						mag = mag > 1.f ? 1.f / ( 5.f * 60.f ) : 0.f;
+						eye = Vec3( eye.x + dis.x * mag,
+							eye.y + dis.y * mag, eye.z + dis.z * mag);
+					}
+					break;
+				case BIRDS_EYE_VIEW:
+					{
+						Timer += 2 * PI / ( 10.f * 60.f );
+						Timer = fmod( Timer, 2 * PI );
+						at = Vec3( 0.f, 0.f, 0.f );
+						eye.y = 12.f;
+						eye.x = 12.f * sin( Timer );
+						eye.z = 12.f * cos( Timer );
+					}
+					break;
+				case FOLLOW_FISH: //circle from above animal
+				case FOLLOW_WATERBUG:
+					{
+						FollowIndex %= TrajectoryMode == FOLLOW_FISH ? fish.size() : waterbugs.size();
+						Vec3 const where = (TrajectoryMode == FOLLOW_FISH ? fish[ FollowIndex ].GetPosition() : waterbugs[ FollowIndex ].GetPosition() );
+						Timer += 2 * PI / ( 10.f * 60.f );
+						Timer = fmod( Timer, 2 * PI );
+						at = where;
+						eye.y = at.y + 4.f;
+						eye.x = at.x + 4.f * sin( Timer );
+						eye.z = at.z + 4.f * cos( Timer );
+					}
+					break;
+				}
+			}
+		}
+		Vec4 GetDirection() const
+		{
+			return Vec4( at.x - eye.x, at.y - eye.y, at.z - eye.z, 0.f );
+		}
+		void SetDirection( Vec4 dir )
+		{
+			at = Vec3( eye.x + dir.x, eye.y + dir.y, eye.z + dir.z );
+		}
+		void Move( float dir ) // 1 for forward, -1 for backward
+		{
+			Vec3 direction = Normalize( ToVec3( GetDirection() ) );
+			eye.x += dir * direction.x;
+			eye.y += dir * direction.y;
+			eye.z += dir * direction.z;
+
+			at.x += dir * direction.x;
+			at.y += dir * direction.y;
+			at.z += dir * direction.z;
+		}
+		Camera() : MotionMode( false )
+		{
+		}
+	};
 
 	int WindowId;
 	Board m_board;
 	Camera m_camera;
+	LightSource m_light;
 	std::vector< Fish > m_fish;
 	std::vector< WaterBug > m_waterbugs;
 	std::vector< Particle > m_particles;
+	std::map< std::string, Texture > m_textures;
 
 	static void DisplayFunc();
 	static void ReshapeFunc( int Width, int Height );
@@ -350,8 +460,6 @@ private:
 	static void IdleFunc();
 
 	//the following are math functions used for this program
-	//I'm really glad my knowledge of game development in DirectX serves me here too
-	//big thanks for Alexander Hamilton for inventing quaternions
 	static Vec4 QuaternionMultiply( Vec4 q1, Vec4 q2 )
 	{
 		return Vec4( q1.x * q2.w + q1.y * q2.z - q1.z * q2.y + q1.w * q2.x,
@@ -474,6 +582,10 @@ private:
 		vec.w *= scalefac / mag;
 		return vec;
 	}
+	static float GetScale( Vec4 vec )
+	{
+		return sqrt( vec.x * vec.x + vec.y * vec.y + vec.z * vec.z + vec.w * vec.w );
+	}
 	static float DotProduct( Vec3 vec1, Vec3 vec2 )
 	{
 		//probably the easiest
@@ -488,9 +600,38 @@ private:
 			Axis.z * sin( Theta / 2.f ),
 			cos( Theta / 2.f ) );
 	}
+	static float ToRadians( float degrees )
+	{
+		return degrees * 2.f * acos( 0.f ) /180.f;
+	}
+	static Vec3 ToVec3( Vec4 vec )
+	{
+		return Vec3( vec.x, vec.y, vec.z );
+	}
+	static Vec4 CalculateRotation( Vec3 u, Vec3 v )
+	{
+		float norm_u_norm_v = sqrt( DotProduct( u, u ) * DotProduct( v, v ) );
+		float real_part = norm_u_norm_v + DotProduct( u, v );
+		Vec3 w;
+
+		if ( real_part < 1.e-6f * norm_u_norm_v )
+		{
+			/*If u and v are exactly opposite then rotate 180 degrees
+			 around an arbitrary orthogonal axis*/
+			real_part = 0.0f;
+			w = abs( u.x ) > abs( u.z ) ? Vec3( -u.y, u.x, 0.f )
+									: Vec3( 0.f, -u.z, u.y );
+		}
+		else
+			w = CrossProduct( u, v );
+
+		return Normalize( Vec4( w, real_part ) );
+	}
+
 	static void trajectories( int menuitem );
 	static void left_menu( int menuitem );
 	static void right_menu( int menuitem );
+	static void follow_menu( int menuitem );
 
 	void SetPreTrajectory( Vec3 At, Vec3 Eye )
 	{
@@ -530,56 +671,140 @@ private:
 		m_camera.MotionMode = true;
 		m_camera.TrajectoryMode = Camera::CUSTOM_TRAJECTORY;
 	}
+	void SetFollowFish()
+	{
+		m_camera.MotionMode = true;
+		m_camera.FollowIndex = 0;
+		m_camera.TrajectoryMode = Camera::FOLLOW_FISH;
+	}
+	void SetFollowWaterbug()
+	{
+		m_camera.MotionMode = true;
+		m_camera.FollowIndex = 0;
+		m_camera.TrajectoryMode = Camera::FOLLOW_WATERBUG;
+	}
+
+	void LoadTexture( std::string const & FileName )
+	{
+		//check if it exists already
+		std::map< std::string, Texture >::iterator it;
+		if( (it = m_textures.find( FileName )) != m_textures.end() )
+		{
+			glBindTexture( GL_TEXTURE_2D, it->second.TexID );
+			return;
+		}
+
+		//allocate the resources to read it
+		FILE * pFile = NULL;
+		void * buffer = NULL;
+		unsigned char headerinfo[ 54 ];
+		Texture texture;
+
+		try
+		{
+			if( !( pFile = fopen( FileName.c_str(), "rb" ) ) )
+				throw std::runtime_error( "Could not open file" );
+
+			fread( headerinfo, sizeof( headerinfo ), 1, pFile );
+
+			if( !(headerinfo[ 0 ] == 'B' && headerinfo[ 1 ] == 'M' || headerinfo[ 28 ] == 24) )
+				throw std::invalid_argument( "Invalid file format" );
+			texture.Width = headerinfo[ 18 ] + (headerinfo[ 19 ] << 8);
+			texture.Height = headerinfo[ 22 ] + (headerinfo[ 23 ] << 8);
+			unsigned dataoffset = headerinfo[ 10 ] + (headerinfo[ 11 ] << 8);
+
+			unsigned bitmapsize = 24 * texture.Width * texture.Height;
+
+			if( !(buffer = malloc( bitmapsize )) )
+				throw std::runtime_error( "Out of memory" ); //fat chance
+
+			fread( buffer, bitmapsize, 1, pFile );
+
+			glGenTextures( 1, &texture.TexID ); //create the texture
+
+			glBindTexture( GL_TEXTURE_2D, texture.TexID ); //set current
+ 
+			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE ); //modulate
+ 
+			//set the mipmap and filters
+			glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST );
+			glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+			glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
+			glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );
+ 
+			//build the map
+			gluBuild2DMipmaps( GL_TEXTURE_2D, 3, texture.Width, texture.Height, GL_RGB, GL_UNSIGNED_BYTE, buffer );
+
+			m_textures[ FileName ] = texture;
+		}
+		catch( std::exception const & except )
+		{
+			printf( "Error loading texture: %s -- %s\n", FileName.c_str(), except.what() );
+		}
+		free( buffer );
+		if( pFile ) fclose( pFile );
+	}
 
 	void InitializeLists()
 	{
 		glMatrixMode( GL_MODELVIEW );
-		
-		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE /*GL_FILL*/ );
 
-		/*Spheres*/
-		glPushAttrib( GL_ALL_ATTRIB_BITS );
-		glNewList( SPHERES, GL_COMPILE );
-		glColor3f( 1.0f, 0.0f, 0.0f );
-		glPushMatrix();
-		glTranslatef( -1.5f, 0.f, 0.f );
-		glutSolidSphere( 1, 20, 20 );
-		glPopMatrix();
-		glPushMatrix();
-		glTranslatef( 1.5f, 0.f, 0.f );
-		glutWireSphere( 1, 20, 20 );
-		glPopMatrix();
-		glPushMatrix();
-		glutWireSphere( 1.f, 20, 20 );
-		glTranslatef( 0.f, 0.f, 2.f );
-		glutWireSphere( 1.f, 20, 20 );
-		glPopMatrix();
+		/*light bulb*/
+		glNewList( BULB, GL_COMPILE );
+		glutSolidSphere( 1.f, 10, 10 );
 		glEndList();
-		glPopAttrib();
 		
 		/*Fish*/
 		glPushAttrib( GL_ALL_ATTRIB_BITS );
 		glNewList( FISH_BODY, GL_COMPILE );
-		glColor3f( 1.f, 0.f, 0.f );
-		glutWireSphere( 1.f, 20, 20 );
+		glPushMatrix();
+		glTranslatef( 0.f, 0.f, 0.3f );
+		glScalef( 0.25f, 0.75f, 1.5f );
+		glColor3f( 1.f, 1.f, 1.f );
+		GLUquadric* pSphereQuadric = gluNewQuadric();
+		gluQuadricDrawStyle( pSphereQuadric, GLU_FILL );
+		gluQuadricOrientation( pSphereQuadric, GLU_OUTSIDE );
+		gluQuadricTexture( pSphereQuadric, GL_TRUE );
+		gluQuadricNormals( pSphereQuadric, GLU_SMOOTH );
+		gluSphere( pSphereQuadric, 1.0, 20, 20 );
+		gluDeleteQuadric( pSphereQuadric );
+		glPopMatrix();
 		glEndList();
 
 		glNewList( FISH_TAIL, GL_COMPILE );
-		glColor3f( 1.f, 0.f, 0.f );
+		glColor3f( 1.f, 1.f, 1.f );
 		glBegin( GL_TRIANGLES );
+
+		//bottom panel
+		Vec3 n1 = Normalize( CrossProduct( Vec3( 0.15f, -0.5f, -0.5f ), Vec3( -0.15f, -0.5f, -0.5f ) ) );
+		glNormal3f( n1.x, n1.y, n1.z );
 		glVertex3f( 0.f, 0.f, 0.f );
 		glVertex3f( -0.15f, -0.5f, -0.5f );
 		glVertex3f( 0.15f, -0.5f, -0.5f );
+
+		//top panel
+		Vec3 n2 = Normalize( CrossProduct( Vec3( 0.15f, 0.5f, -0.5f ), Vec3( -0.15f, 0.5f, -0.5f ) ) );
+		glNormal3f( n2.x, n2.y, n2.z );
 		glVertex3f( 0.f, 0.f, 0.f );
 		glVertex3f( -0.15f, 0.5f, -0.5f );
 		glVertex3f( 0.15f, 0.5f, -0.5f );
+
+		//left panel
+		Vec3 n3 = Normalize( CrossProduct( Vec3( -0.15f, -0.5f, -0.5f ), Vec3( -0.15f, 0.5f, -0.5f ) ) );
+		glNormal3f( n3.x, n3.y, n3.z );
 		glVertex3f( 0.f, 0.f, 0.f );
 		glVertex3f( -0.15f, 0.5f, -0.5f );
 		glVertex3f( -0.15f, -0.5f, -0.5f );
+
+		//right panel
+		Vec3 n4 = Normalize( CrossProduct( Vec3( 0.15f, -0.5f, -0.5f ), Vec3( 0.15f, 0.5f, -0.5f ) ) );
+		glNormal3f( n4.x, n4.y, n4.z );
 		glVertex3f( 0.f, 0.f, 0.f );
 		glVertex3f( 0.15f, 0.5f, -0.5f );
 		glVertex3f( 0.15f, -0.5f, -0.5f );
 
+		//back panel
+		glNormal3f( 0.f, 0.f, -1.f );
 		glVertex3f( -0.15f, 0.5f, -0.5f );
 		glVertex3f( -0.15f, -0.5f, -0.5f );
 		glVertex3f( 0.15f, -0.5f, -0.5f );
@@ -593,54 +818,92 @@ private:
 
 		//WaterBug
 		glPushAttrib( GL_ALL_ATTRIB_BITS );
+		GLUquadric* pCylinderQuadric = gluNewQuadric();
+		gluQuadricDrawStyle( pCylinderQuadric, GLU_FILL );
+		gluQuadricOrientation( pCylinderQuadric, GLU_OUTSIDE );
+		gluQuadricTexture( pCylinderQuadric, GL_TRUE );
+		gluQuadricNormals( pCylinderQuadric, GLU_SMOOTH );
 		glNewList( WATERBUG_BODY, GL_COMPILE );
 		glPushMatrix();
-		glColor3f( 1.f, 0.f, 0.f );
-		glutWireCylinder( 0.5f, 2.f, 10, 3 );
+		glColor3f( 1.f, 1.f, 1.f );
+		gluCylinder( pCylinderQuadric, 0.5, 0.5, 2.0, 10, 3 );
 		glTranslatef( 0.f, 0.f, 2.f );
 		glScalef( 4.f / 12.f, 4.f / 12.f, 4.f / 12.f );
-		glutWireDodecahedron();
+		glutSolidDodecahedron();
 		glPopMatrix();
 		glEndList();
 
 		glNewList( WATERBUG_LIMB, GL_COMPILE );
-		glColor3f( 1.f, 0.f, 0.f );
-		glutWireCylinder( 0.2f, 2.f, 10, 3 );
+		glColor3f( 1.f, 1.f, 1.f );
+		gluCylinder( pCylinderQuadric, 0.2, 0.2, 2.0, 10, 3 );
 		glEndList();
+		gluDeleteQuadric( pCylinderQuadric );
 		glPopAttrib();
 
 		glNewList( PARTICLE, GL_COMPILE );
-		//glutWireSphere( 0.1f, 20, 20 );
-		glutWireCube( 0.1 );
+		glutSolidCube( 0.1 );
 		glEndList();
 
-	}
-	void DrawSpheres()
-	{
-		static float f = 0;
+		//Seabed
+		glPushAttrib( GL_ALL_ATTRIB_BITS );
+		glNewList( SEABED, GL_COMPILE );
 		glPushMatrix();
-		glTranslatef( 0.f, 0.f, -4.f );
-	//	glRotatef( f+=0.1f, 0.f, 1.f, 0.f );
-		glCallList( SPHERES );
+		const float scalefactor = 300.f;
+		const float scalefactor2 = sqrt( scalefactor );
+		glTranslatef( 0.f, -20.f, 0.f );
+		glColor3f( 1.f, 1.f, 1.f );
+		glNormal3f( 0.f, 1.f, 0.f );
+		glBegin( GL_TRIANGLE_STRIP );
+		glTexCoord2f( 0.f * scalefactor2 , 0.f * scalefactor2 );
+		glVertex3f( -0.5f * scalefactor, 0.f, -0.5f * scalefactor );
+		glTexCoord2f( 1.f * scalefactor2, 0.f );
+		glVertex3f( 0.5f * scalefactor, 0.f, -0.5f * scalefactor );
+		glTexCoord2f( 0.f, 1.f * scalefactor2 );
+		glVertex3f( -0.5f * scalefactor, 0.f, 0.5f * scalefactor );
+		glTexCoord2f( 1.f * scalefactor2, 1.f * scalefactor2 );
+		glVertex3f( 0.5f * scalefactor, 0.f, 0.5f * scalefactor );
+		glEnd();
 		glPopMatrix();
+		glEndList();
+		glPopAttrib();
 	}
 	void Advance() /*mostly drawing*/
 	{
 		
 		/*Set-Up*/
-		glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
+		glClearColor( m_board.FogColor.r, m_board.FogColor.g, m_board.FogColor.b, 0.0f );
 		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 		glMatrixMode( GL_MODELVIEW );
 		glLoadIdentity();
+		
+		m_camera.Update( m_fish, m_waterbugs );
+
 		gluLookAt( m_camera.eye.x, m_camera.eye.y, m_camera.eye.z,
 			m_camera.at.x, m_camera.at.y, m_camera.at.z,
 			m_camera.up.x, m_camera.up.y, m_camera.up.z );
+			
 		glPushAttrib( GL_ALL_ATTRIB_BITS );
 		
 		/*Drawing is performed here*/
-		//DrawSpheres();
+		const float quad_att = 0.01f;
+		const float lin_att =  0.03f;
+		const float const_att = 0.0f;
+		glLightfv( GL_LIGHT0, GL_QUADRATIC_ATTENUATION, &quad_att );
+		glLightfv( GL_LIGHT0, GL_LINEAR_ATTENUATION, &lin_att );
+		glLightfv( GL_LIGHT0, GL_CONSTANT_ATTENUATION, &const_att );
+
+		//tell OGL about the components of the light
+		glLightfv( GL_LIGHT0, GL_AMBIENT, &m_light.ambience.r );
+		glLightfv( GL_LIGHT0, GL_DIFFUSE, &m_light.diffuse.r ); 
+		glLightfv( GL_LIGHT0, GL_SPECULAR, &m_light.specular.r );
+		glLightfv( GL_LIGHT0, GL_POSITION, &m_light.position.r );
+
+		LoadTexture( "FishScales.bmp" );
+
 		for( unsigned u = 0; u < m_fish.size(); ++u )
 			m_fish[ u ].Update( m_board.LowerBounds, m_board.UpperBounds ), m_fish[ u ].Draw();
+
+		LoadTexture( "Waterbug.bmp" );
 
 		for( unsigned u = 0; u < m_waterbugs.size(); ++u )
 			m_waterbugs[ u ].Update( m_board.LowerBounds, m_board.UpperBounds_Floor ), m_waterbugs[ u ].Draw();
@@ -648,12 +911,25 @@ private:
 		for( unsigned u = 0; u < m_particles.size(); ++u )
 			m_particles[ u ].Update( m_board.LowerBounds, m_board.UpperBounds ), m_particles[ u ].Draw();
 
+		LoadTexture( "Seabed.bmp" );
+
+		//the seabed
+		glCallList( SEABED );
+
+		//the light bulb
+		glPushMatrix();
+		glTranslatef( m_light.position.x, m_light.position.y, m_light.position.z );
+		glDisable( GL_LIGHTING );
+		glDisable( GL_TEXTURE_2D );
+		glCallList( BULB );
+		glEnable( GL_TEXTURE_2D );
+		glEnable( GL_LIGHTING );
+		glPopMatrix();
+
 		/*Finishing*/
 		glPopAttrib();
 		glFlush();
 		glutSwapBuffers();
-
-		m_camera.Update();
 	}
 	void ReshapeWindow( int Width, int Height )
 	{
@@ -695,7 +971,10 @@ private:
 		float displace = 2.3f;
 		switch( Key )
 		{
-		/*Escape / Quit*/
+		case 'N':
+		case 'n':
+			++m_camera.FollowIndex;
+			break;
 		case 'X':
 			m_camera.eye.x += displace;
 			break;
@@ -714,26 +993,58 @@ private:
 		case 'z':
 			m_camera.eye.z -= displace;
 			break;
+		case 'f':
+		case 'F':
+			m_camera.Move( 1.f );
+			break;
+		case 'b':
+		case 'B':
+			m_camera.Move( -1.f );
+			break;
 		case 27:
 		case 'q':
 			glutDestroyWindow( WindowId );
 		}
-		m_camera.MotionMode = false;
+		if( !( Key == 'n' || Key == 'N' ) )
+			m_camera.MotionMode = false;
+
 		glutPostRedisplay();
 	}
-	void SpecialKey( int Key ) /*ignore this, it's for portability*/
+	void SpecialKey( int Key )
 	{
+		/*camera is now in navigation mode*/
+		float const PI = 2.f * acos( 0.f );
+		m_camera.MotionMode = false;
+		m_camera.TrajectoryMode = Camera::NAVIGATION;
+
+		Vec3 dir = Normalize( ToVec3( m_camera.GetDirection() ) );
+		/*we need to calculate a new 'right' vector with respect to our 'up'
+		 and to our 'forward' vector (forward defined by dir, up defined by camera's up vector for to gluLookAt())*/
+
+		Vec3 const up = Normalize( m_camera.up );
+		Vec3 const right = Normalize( CrossProduct( dir, up ) );
+		float const turn = 10.f; //turn strength
+		Vec4 displace;
 		switch( Key )
 		{
 		case GLUT_KEY_UP:
+			displace = QuaternionAxisAngle( right, ToRadians( turn ) );
 			break;
 		case GLUT_KEY_LEFT:
+			displace = QuaternionAxisAngle( up, ToRadians( turn ) );
 			break;
 		case GLUT_KEY_DOWN:
+			displace = QuaternionAxisAngle( right, ToRadians( -turn ) );
 			break;
 		case GLUT_KEY_RIGHT:
+			displace = QuaternionAxisAngle( up, ToRadians( -turn ) );
 			break;
+		default:
+			return;
 		}
+		Vec4 new_dir = QuaternionMultiply( QuaternionMultiply( displace, m_camera.GetDirection() ), QuaternionConjugate( displace ) );
+		m_camera.SetDirection( new_dir );
+
 		glutPostRedisplay();
 	}
 
@@ -742,10 +1053,10 @@ public:
 	{
 		/*Initialize glut*/
 		glutInit( &argc, argv );
-		glutInitDisplayMode( GLUT_DOUBLE | GLUT_RGB );
+		glutInitDisplayMode( GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH );
 		glutInitWindowSize( m_board.m_width, m_board.m_height );
 		glutInitWindowPosition( 100, 100 );
-		WindowId = glutCreateWindow( "Assignment 3" );
+		WindowId = glutCreateWindow( "Assignment 4" );
 		glutDisplayFunc( &DisplayFunc );
 		glutMouseFunc( &MouseFunc );
 		glutKeyboardFunc( &KeyboardFunc );
@@ -754,7 +1065,28 @@ public:
 		glutTimerFunc( 16, &TimerFunc, 0 );
 		glutIdleFunc( &IdleFunc );
 
+		/*enable lighting, fog, depth test, and smooth shading*/
 		glEnable( GL_DEPTH_TEST );
+		glEnable( GL_LIGHTING );
+		glEnable( GL_COLOR_MATERIAL );
+		glLightModelfv( GL_LIGHT_MODEL_AMBIENT, (float*)&Vec4( 0.1f, 0.1f, 0.1f, 1.f ) );
+		glEnable( GL_LIGHT0 );
+		glShadeModel( GL_SMOOTH );
+		glEnable( GL_DEPTH_TEST );
+		glEnable( GL_NORMALIZE );
+		glEnable( GL_TEXTURE_2D );
+		glPolygonMode( GL_FRONT_AND_BACK, /*GL_LINE*/ GL_FILL );
+		glEnable( GL_FOG );
+		glFogi( GL_FOG_MODE, GL_LINEAR );
+		glFogf( GL_FOG_START, 0.01f );
+		glFogf( GL_FOG_END, 30.f );
+		glFogfv( GL_FOG_COLOR, (float*)&m_board.FogColor.r );
+
+		//the light components of the light source
+		m_light.ambience = Vec4( 0.01f, 0.01f, 0.01f, 1.0f );
+		m_light.diffuse = Vec4( 0.7f, 0.7f, 0.7f, 1.0f );
+		m_light.specular = Vec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		m_light.position = Vec4( 0.0f, 5.0f, 0.0f, 1.0f );
 
 		/*Initialize glut menus*/
 		int trajectmenu = glutCreateMenu( trajectories );
@@ -768,7 +1100,11 @@ public:
 		glutAddSubMenu( "Trajectories", trajectmenu );
 		glutAttachMenu( GLUT_LEFT_BUTTON );
 
+		int followmenu = glutCreateMenu( follow_menu );
+		glutAddMenuEntry( "Fish", 0 );
+		glutAddMenuEntry( "Waterbug", 1 );
 		int rightmenu = glutCreateMenu( right_menu );
+		glutAddSubMenu( "Follow...", followmenu );
 		glutAddMenuEntry( "Exit", 0 );
 		glutAttachMenu( GLUT_RIGHT_BUTTON );
 
@@ -785,15 +1121,17 @@ public:
 		for( unsigned u = 0; u < 30; ++u )
 			m_waterbugs.push_back( WaterBug( m_board.LowerBounds, m_board.UpperBounds_Floor ) );
 
+		glDisable( GL_TEXTURE_2D );
 		for( unsigned u = 0; u < 100; ++u )
 			m_particles.push_back( Particle( m_board.LowerBounds, m_board.UpperBounds ) );
-	
+		glEnable( GL_TEXTURE_2D );
 
 		/*run the glut mainloop*/
 		glutMainLoop();
 	}
 };
-static Program glprogram; //thought it's global, it's a necessary evil because of glut
+
+static Program glprogram; //global is necessary due to GLUT
 
 int main( int argc, char ** argv )
 {
@@ -870,6 +1208,18 @@ void Program::right_menu( int menuitem )
 	case 0:
 		puts( "Goodbye" );
 		glutDestroyWindow( glprogram.WindowId );
+		break;
+	}
+}
+void Program::follow_menu( int menuitem )
+{
+	switch( menuitem )
+	{
+	case 0:
+		glprogram.SetFollowFish();
+		break;
+	case 1:
+		glprogram.SetFollowWaterbug();
 		break;
 	}
 }
